@@ -32,6 +32,8 @@
             color: #555;
         }
         input[type="text"],
+        input[type="email"],
+        input[type="password"],
         input[type="number"] {
             width: 100%;
             padding: 8px 12px;
@@ -40,6 +42,8 @@
             font-size: 14px;
         }
         input[type="text"]:focus,
+        input[type="email"]:focus,
+        input[type="password"]:focus,
         input[type="number"]:focus {
             outline: none;
             border-color: #1a73e8;
@@ -64,6 +68,32 @@
             cursor: pointer;
             transition: background-color 0.2s;
         }
+        .sync-state {
+            margin: 0 0 16px;
+            padding: 10px 12px;
+            border: 1px solid #dadce0;
+            border-radius: 4px;
+            background: #f8f9fa;
+            color: #5f6368;
+            font-size: 12px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .sync-state.success {
+            border-color: #c6e1c6;
+            background: #e6f4ea;
+            color: #137333;
+        }
+        .sync-state.error {
+            border-color: #f5c2c1;
+            background: #fce8e6;
+            color: #c5221f;
+        }
+        button:disabled {
+            cursor: wait;
+            opacity: 0.65;
+        }
         .btn-primary {
             background-color: #1a73e8;
             color: white;
@@ -84,6 +114,8 @@
             border-radius: 4px;
             font-size: 13px;
             display: none;
+            white-space: pre-wrap;
+            word-break: break-word;
         }
         .status.success {
             background-color: #e6f4ea;
@@ -119,6 +151,7 @@
 </head>
 <body>
     <h1>🔄 Flow2API Token Updater</h1>
+    <div class="sync-state" id="lastSync">正在读取同步状态...</div>
 
     <div class="form-group">
         <label for="apiUrl">连接接口</label>
@@ -128,14 +161,14 @@
 
     <div class="form-group">
         <label for="connectionToken">连接Token</label>
-        <input type="text" id="connectionToken" placeholder="输入连接Token">
-        <div class="hint">从Flow2API管理后台的"插件连接配置"中复制</div>
+        <input type="password" id="connectionToken" placeholder="输入连接Token" autocomplete="off">
+        <div class="hint">仅保存在当前浏览器，不会通过Chrome同步</div>
     </div>
 
     <div class="form-group">
-        <label for="loginAccount">Google账号（可选）</label>
-        <input type="text" id="loginAccount" placeholder="name@example.com">
-        <div class="hint">多账号登录时建议填写，用于选择正确的Google账号</div>
+        <label for="loginAccount">Google账号</label>
+        <input type="email" id="loginAccount" placeholder="name@example.com" required>
+        <div class="hint">用于稳定更新同一账号，避免Cookie变化后被识别为新账号</div>
     </div>
 
     <div class="form-group">
@@ -161,8 +194,8 @@
         <strong>📌 使用说明：</strong><br>
         1. 在Flow2API管理后台获取连接接口和Token<br>
         2. 填写配置并保存<br>
-        3. 多账号浏览器建议填写当前Flow账号邮箱<br>
-        4. 插件将自动同步Flow登录态到Flow2API系统
+        3. 填写当前Flow账号邮箱，确保持续更新同一账号<br>
+        4. 插件将定时同步新版Flow登录态到Flow2API系统
     </div>
 
     <script src="popup.js"></script>
