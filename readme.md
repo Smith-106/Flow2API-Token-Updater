@@ -27,7 +27,7 @@
     ![后台查看配置](image-3.png)
 
 3.  **多账号浏览器**
-    在插件中填写当前使用的 Flow 账号邮箱，确保 Cookie 更新后仍能准确更新同一个账号。插件会定时同步 `flow.google.com` 与 Google 账号域下的登录 Cookie，不再使用已经失效的旧版 Session Token。
+    在插件中填写当前使用的 Flow 账号邮箱，确保 Cookie 更新后仍能准确更新同一个账号。同步前请确认当前浏览器配置中的 `https://flow.google.com/projects` 可以正常打开。插件会按浏览器访问 Flow 时实际携带的 Cookie 范围同步登录态，并保留 Cookie 的域名、路径和同名项。
 
 4.  **连接权限**
     首次保存配置时，浏览器会请求访问对应 Flow2API 服务地址。插件仅申请当前填写地址的访问权限，用于提交登录态。
@@ -40,4 +40,4 @@
 - 网络请求超时为 30 秒，遇到网络错误、限流或服务端临时错误时最多重试两次。
 - 日志最多保留 50 条，不记录连接 Token 或 Cookie 内容。
 - 弹窗和扩展图标会显示最近一次同步结果，便于及时发现登录态失效。
-- 仅上传 `flow.google.com` 域 Cookie 以及 Google 账号认证 Cookie 白名单，不上传 Google 搜索偏好或广告 Cookie。
+- 仅上传浏览器访问 `flow.google.com/projects` 时实际匹配的 Cookie，不读取其他网站的 Cookie。

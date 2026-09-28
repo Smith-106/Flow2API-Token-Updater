@@ -8,28 +8,17 @@ const MAX_REFRESH_INTERVAL = 1440;
 const REQUEST_TIMEOUT_MS = 30000;
 const RETRY_DELAYS_MS = [1500, 4000];
 
-const FLOW_URL = 'https://flow.google.com/';
+const FLOW_URL = 'https://flow.google.com/projects';
 const MODERN_FLOW_COOKIE_NAMES = new Set(['OSID', '__Secure-OSID']);
-const GOOGLE_ACCOUNT_COOKIE_NAMES = new Set(['SID', 'HSID', 'SSID', 'APISID', 'SAPISID']);
-const GOOGLE_AUTH_COOKIE_NAMES = new Set([
-    ...MODERN_FLOW_COOKIE_NAMES,
-    ...GOOGLE_ACCOUNT_COOKIE_NAMES,
-    'SIDCC',
-    'AEC',
+const GOOGLE_ACCOUNT_COOKIE_NAMES = new Set([
+    'SID',
+    'HSID',
+    'SSID',
+    'APISID',
+    'SAPISID',
     '__Secure-1PSID',
-    '__Secure-3PSID',
-    '__Secure-1PAPISID',
-    '__Secure-3PAPISID',
-    '__Secure-1PSIDCC',
-    '__Secure-3PSIDCC',
-    '__Secure-1PSIDTS',
-    '__Secure-3PSIDTS'
+    '__Secure-3PSID'
 ]);
-const COOKIE_QUERIES = [
-    { label: 'Flow新版页面', query: { url: FLOW_URL } },
-    { label: 'Flow新版域名', query: { domain: 'flow.google.com' } },
-    { label: 'Google账号域名', query: { domain: '.google.com' } }
-];
 
 let activeSyncPromise = null;
 let logWriteQueue = Promise.resolve();
@@ -405,82 +394,42 @@ function deduplicateCookies(cookies) {
     return Array.from(new Map(cookies.map(cookie => [cookieKey(cookie), cookie])).values());
 }
 
-function isGoogleCookieDomain(domain) {
-    const normalizedDomain = normalizeCookieDomain(domain);
-    return normalizedDomain === 'google.com' || normalizedDomain.endsWith('.google.com');
-}
-
 function isGoogleAccountCookieDomain(domain) {
     const normalizedDomain = normalizeCookieDomain(domain);
-    return normalizedDomain === 'google.com' || normalizedDomain === 'accounts.google.com';
+    return normalizedDomain === 'google.com';
 }
 
-function cookiePreferenceScore(cookie) {
-    const domain = normalizeCookieDomain(cookie.domain);
-    let score = String(cookie.path || '').length;
-
-    if (MODERN_FLOW_COOKIE_NAMES.has(cookie.name) && domain === 'flow.google.com') {
-        score += 10000;
-    }
-    if (GOOGLE_ACCOUNT_COOKIE_NAMES.has(cookie.name)) {
-        if (domain === 'google.com') {
-            score += 10000;
-        } else if (domain === 'accounts.google.com') {
-            score += 9000;
-        }
-    }
-
-    return score;
-}
-
-function buildCookieHeader(cookies) {
-    const selectedCookies = new Map();
-
-    for (const cookie of cookies) {
-        if (!cookie.name || !cookie.value) {
-            continue;
-        }
-
-        const domain = normalizeCookieDomain(cookie.domain);
-        const isRelevantDomain = domain === 'flow.google.com'
-            || (isGoogleCookieDomain(domain) && GOOGLE_AUTH_COOKIE_NAMES.has(cookie.name));
-
-        if (!isRelevantDomain) {
-            continue;
-        }
-
-        const existing = selectedCookies.get(cookie.name);
-        const cookieScore = cookiePreferenceScore(cookie);
-        const existingScore = existing ? cookiePreferenceScore(existing) : -1;
-        if (!existing || cookieScore > existingScore) {
-            selectedCookies.set(cookie.name, cookie);
-        }
-    }
-
-    return Array.from(selectedCookies.values())
-        .map(cookie => `${cookie.name}=${cookie.value}`)
-        .join('; ');
+function serializeCookieStorage(cookies) {
+    const payload = cookies
+        .filter(cookie => cookie && cookie.name && cookie.value)
+        .map(cookie => {
+            const item = {
+                name: cookie.name,
+                value: cookie.value,
+                domain: cookie.domain || '',
+                path: cookie.path || '/',
+                secure: Boolean(cookie.secure),
+                httpOnly: Boolean(cookie.httpOnly),
+                hostOnly: Boolean(cookie.hostOnly),
+                session: Boolean(cookie.session)
+            };
+            if (Number.isFinite(cookie.expirationDate)) {
+                item.expirationDate = cookie.expirationDate;
+            }
+            if (cookie.sameSite) {
+                item.sameSite = cookie.sameSite;
+            }
+            if (cookie.partitionKey && typeof cookie.partitionKey === 'object') {
+                item.partitionKey = cookie.partitionKey;
+            }
+            return item;
+        });
+    return JSON.stringify(payload);
 }
 
 async function collectRelevantCookies() {
-    const results = await Promise.allSettled(
-        COOKIE_QUERIES.map(source => chrome.cookies.getAll(source.query))
-    );
-    const cookies = [];
-
-    for (let index = 0; index < results.length; index += 1) {
-        const source = COOKIE_QUERIES[index];
-        const result = results[index];
-        if (result.status === 'fulfilled') {
-            cookies.push(...result.value);
-            await Logger.info(`从${source.label}找到 ${result.value.length} 个Cookie`);
-        } else {
-            await Logger.error(`读取${source.label} Cookie失败`, {
-                error: result.reason instanceof Error ? result.reason.message : String(result.reason)
-            });
-        }
-    }
-
+    const cookies = await chrome.cookies.getAll({ url: FLOW_URL });
+    await Logger.info(`从Flow页面请求范围找到 ${cookies.length} 个Cookie`);
     return deduplicateCookies(cookies);
 }
 
@@ -680,6 +629,22 @@ async function extractAndSendToken() {
 
         await sleep(5000);
 
+        const loadedTab = await chrome.tabs.get(tab.id);
+        let loadedHost = '';
+        try {
+            loadedHost = new URL(loadedTab.url || '').hostname.toLowerCase();
+        } catch (error) {
+            loadedHost = '';
+        }
+        if (loadedHost !== 'flow.google.com') {
+            await closeTemporaryTab(tab);
+            tab = null;
+            return {
+                success: false,
+                error: 'Google Flow未保持登录状态。请在当前浏览器配置中重新登录Flow后再试。'
+            };
+        }
+
         await Logger.info('开始提取Cookies...');
 
         // 2. 提取新版Flow会话与Google账号Cookie
@@ -697,7 +662,7 @@ async function extractAndSendToken() {
             && isGoogleAccountCookieDomain(cookie.domain)
             && cookie.value
         ));
-        const googleCookies = googleAccountCookie ? buildCookieHeader(uniqueCookies) : '';
+        const googleCookies = googleAccountCookie ? serializeCookieStorage(uniqueCookies) : '';
 
         if (modernFlowCookie) {
             await Logger.success('找到新版Flow Cookie', {
@@ -741,8 +706,8 @@ async function extractAndSendToken() {
         }
 
         await Logger.info('Flow Cookie提取成功', {
-            mode: 'modern-cookie',
-            cookieCount: googleCookies.split('; ').length
+            mode: 'structured-cookie',
+            cookieCount: uniqueCookies.length
         });
 
         // 3. 发送到服务器
